@@ -2,6 +2,10 @@
 
 免费、无需鉴权的每日壁纸接口，运行在 Cloudflare Workers。目前接入必应每日一图，架构上可持续扩展更多图源。
 
+**线上地址：** https://wallpaper.apanzinc.top/api
+
+试试：https://wallpaper.apanzinc.top/api?mkt=zh-CN&q=uhd
+
 ## 特点
 
 - 无需 API Key，开箱即用
