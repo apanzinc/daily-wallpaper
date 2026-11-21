@@ -1,0 +1,11 @@
+{
+  "name": "daily-wallpaper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Free daily wallpaper API on Cloudflare Workers, starting with Bing.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}
