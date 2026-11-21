@@ -13,7 +13,7 @@
 - 支持地区（mkt）、历史日期（idx）、多张（n）、高清档位（uhd/hd）
 - 支持 302 图片直链跳转，可直接当图片地址用
 - CORS 全开，前端可跨域调用
-- 1 小时缓存，减少上游压力
+- 双层缓存：浏览器/CDN 响应头 + Worker 边缘缓存上游结果，高频请求不重复打必应
 
 ## API
 
@@ -95,6 +95,33 @@ curl -L "https://<你的域名>/api?redirect=1&q=uhd" -o wallpaper.jpg
   ]
 }
 ```
+
+### 缓存
+
+两层，各自独立：
+
+| 层 | 位置 | 有效期 | 作用 |
+| --- | --- | --- | --- |
+| 响应头 | 浏览器 / CDN | 1 小时 | `Cache-Control: public, max-age=3600`，客户端直接复用 |
+| 边缘缓存 | Worker 内部 Cache API | 1 小时 | 缓存必应上游 JSON，相同参数不再回源 |
+
+边缘缓存的 key 是规范化后的 `provider + idx + n + mkt`，**不含** `quality` 和 `redirect`。清晰度只是本地 URL 变换，地区别名会归一到标准码，所以 `mkt=中国`、`q=uhd`、`redirect=1` 共用同一份上游数据，同一组合在缓存期内只打一次必应。
+
+响应带 `X-Upstream-Cache` 头，可直接验证：
+
+| 值 | 含义 |
+| --- | --- |
+| `MISS` | 首次请求，回源并写入缓存 |
+| `HIT` | 命中边缘缓存，未回源 |
+| `BYPASS` | 当前环境无 Cache API（本地 Node / 预览环境），直连上游 |
+
+```bash
+curl -sI "https://wallpaper.apanzinc.top/api?mkt=zh-CN" | grep -i x-upstream-cache
+```
+
+错误响应一律 `Cache-Control: no-store`，不缓存。
+
+注意 Cache API 的缓存按数据中心本地存储，不跨节点复制；不同边缘节点首次访问各自回源一次，之后命中。缓存需部署到自定义域名后生效，本地开发环境会走 `BYPASS`。
 
 ### 错误码
 

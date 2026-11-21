@@ -10,6 +10,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Expose-Headers': 'X-Upstream-Cache',
 };
 
 function json(body, status = 200, extra = {}) {
@@ -40,7 +41,7 @@ function clampInt(value, fallback, min, max) {
 /**
  * 处理 /api 请求。
  */
-export async function handleApi(searchParams) {
+export async function handleApi(searchParams, { origin } = {}) {
   const providerKey = (searchParams.get('provider') ?? 'bing').trim().toLowerCase();
   const provider = PROVIDERS[providerKey];
   if (!provider) {
@@ -69,9 +70,13 @@ export async function handleApi(searchParams) {
   const qualityRaw = (searchParams.get('quality') ?? 'hd').trim().toLowerCase();
   const quality = ['uhd', 'hd', 'original'].includes(qualityRaw) ? qualityRaw : 'hd';
 
+  // provider 回写上游缓存命中状态，作为响应头透出，便于验证缓存是否生效。
+  const upstreamMeta = { upstreamCache: 'BYPASS' };
+  // 缓存 key 用请求自身 origin，保证属于当前 zone；没有 origin（本地直调）时由 provider 兜底。
+  const cacheKeyBase = origin ? `${origin}/__upstream/${providerKey}` : undefined;
   let images;
   try {
-    images = await provider.fetch({ idx, n, mkt, quality });
+    images = await provider.fetch({ idx, n, mkt, quality, meta: upstreamMeta, cacheKeyBase });
   } catch (e) {
     return error('UPSTREAM_ERROR', e.message ?? 'upstream request failed', 502);
   }
@@ -80,24 +85,35 @@ export async function handleApi(searchParams) {
     return error('NO_RESULT', 'No image available for the given parameters', 404);
   }
 
+  const cacheStatus = upstreamMeta.upstreamCache;
   const redirect = searchParams.get('redirect') === '1';
   if (redirect) {
     const target = images[0].url;
     return new Response(null, {
       status: 302,
-      headers: { Location: target, 'Cache-Control': 'public, max-age=3600', ...CORS },
+      headers: {
+        Location: target,
+        // 302 缓存收短到 5 分钟：图片地址每天变，缓存太久会让浏览器一直跳旧图。
+        'Cache-Control': 'public, max-age=300',
+        'X-Upstream-Cache': cacheStatus,
+        ...CORS,
+      },
     });
   }
 
-  return json({
-    provider: providerKey,
-    providerName: provider.meta.label,
-    market: mkt,
-    marketName: regionName(mkt),
-    quality,
-    count: images.length,
-    images,
-  });
+  return json(
+    {
+      provider: providerKey,
+      providerName: provider.meta.label,
+      market: mkt,
+      marketName: regionName(mkt),
+      quality,
+      count: images.length,
+      images,
+    },
+    200,
+    { 'X-Upstream-Cache': cacheStatus },
+  );
 }
 
 export function handleOptions() {

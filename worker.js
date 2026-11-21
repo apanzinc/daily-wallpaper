@@ -19,7 +19,7 @@ export default {
     // 根路径与 /api 等价，都返回 JSON。
     const path = url.pathname.replace(/\/+$/, '') || '/';
     if (path === '/' || path === '/api') {
-      return handleApi(url.searchParams);
+      return handleApi(url.searchParams, { origin: url.origin });
     }
 
     return new Response('Not Found', { status: 404 });
